@@ -1,0 +1,423 @@
+---
+title: 'National Health Survey Data Analysis: Lifestyle Impact on Health Outcomes'
+subtitle: "A Logistic Regression Study on Smoking, Diet, and Mental Health" 
+
+author:
+    affiliations:
+      - name: "Spring 2025"
+affiliation-title: "Quarter"
+format: 
+ pdf: 
+    latex_engine: xelatex
+    geometry: "letterpaper, margin=0.3in"
+    code-fold: true
+    code-line-numbers: true
+    code-copy: true
+    code-tools: true
+    self-contained: true
+    toc: false
+    toc-location: left
+    number-sections: true
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(message =  FALSE)
+knitr::opts_chunk$set(warning =  FALSE)
+knitr::opts_chunk$set(error =  FALSE)
+bfcolor <- function(x, color) {
+  if (knitr::is_latex_output()) {
+    sprintf("\\textcolor{%s}{\\textbf{%s}}", color, x)
+  } else if (knitr::is_html_output()) {
+    sprintf("<span style='color: %s;'><b>%s</b></span>", color, x)
+  } else x
+}
+```
+
+:::callout
+<div style="text-align: center">
+<span style="color: blue;"> **STUDENT NAMES**</span> 
+</div>
+- Ryan Yahnker
+- Kian Jadbabaei
+- Spencer Kung
+:::
+
+```{r, echo=FALSE}
+#load necessary libraries
+suppressPackageStartupMessages({
+  library(dplyr)
+  library(stringr)
+})
+```
+
+## Abstract
+This study investigates three health-related hypotheses using data from a national health survey. Specifically, we examined whether 
+
+1. The presence of a liver condition influences the quality of a person's diet.
+
+2. Increased cigarette consumption (measured by smoke_amount) is associated with higher odds of reporting a COPD diagnosis.
+
+3. Insufficient sleep on weekdays (≤6 hours) correlates with greater likelihood of experiencing frequent depressive symptoms.
+
+To test these hypotheses, we employed ordinal logistic regression for the first and third hypotheses, given their ordinal outcome variables. For the second hypothesis, we used binary logistic regression to model the relationship between continuous smoking behavior and the binary presence of COPD.
+Our findings revealed a statistically significant association between higher smoke_amount and increased odds of reporting COPD, supporting Hypothesis 2. However, no statistically significant relationships were found for Hypotheses 1 and 3. These results underscore the health risks associated with smoking while highlighting the need for further investigation into the effects of liver conditions and sleep on diet and mental health outcomes, respectively.
+
+## Introduction
+
+The dataset we are working with comes from the National Health and Nutrition Examination Survey, a survey that collects detailed health information from a representative sample of adults in the United States. It includes a wide range of variables that cover background information, medical conditions, lifestyle habits, and self-reported health outcomes. For this project, we selected variables that allow us to explore connections between physical and mental health, with a focus on three specific research questions.
+
+The **first question** asks whether having a liver condition influences how individuals rate the quality of their diet. 
+
+The **second question** looks at whether smoking intensity, measured by the average number of cigarettes smoked per day, is associated with the likelihood of reporting a COPD diagnosis. 
+
+The **third question** examines whether the number of hours someone sleeps on weekdays relates to how often they report experiencing depressive symptoms. 
+
+Below are the formal hypotheses tests, corresponding to our three research questions.
+
+**Hypothesis 1: Liver Condition and Diet Quality**
+
+We examine whether having a liver condition affects how individuals rate their diet quality (ordinal outcome).
+
+$$
+\begin{aligned}
+H_0\!: &\ \text{The distribution of diet quality ratings is the same for individuals with and without a liver condition.} \\
+H_A\!: &\ \text{The distribution of diet quality ratings differs between individuals with and without a liver condition.}
+\end{aligned}
+$$
+
+**Hypothesis 2: Smoking and COPD Diagnosis**
+
+We test whether higher cigarette consumption is associated with increased odds of reporting a COPD diagnosis (binary outcome).
+
+$$
+\begin{aligned}
+H_0\!: &\ \text{There is no association between smoking amount and the likelihood of a COPD diagnosis.} \\
+H_A\!: &\ \text{Higher smoking amount is associated with increased likelihood of a COPD diagnosis.}
+\end{aligned}
+$$
+
+**Hypothesis 3: Sleep Duration and Depression Severity**
+
+We investigate whether shorter weekday sleep is related to more frequent depressive symptoms (ordinal outcome).
+
+$$
+\begin{aligned}
+H_0\!: &\ \text{There is no difference in depression frequency between individuals with short sleep and those with adequate sleep.} \\
+H_A\!: &\ \text{Individuals with short sleep report more frequent depressive symptoms compared to those with adequate sleep.}
+\end{aligned}
+$$
+
+These questions and their respective hypotheses are grounded in the idea that behaviors and health conditions are often related in meaningful ways. Each research question is tied to a hypothesis that we investigate through exploratory data analysis. This involves preparing the data, calculating descriptive statistics, and creating visualizations to identify trends and potential associations between variables. Our goal is to develop a deeper understanding of how these health factors interact within the NHANES population and to generate insights that could guide future analysis.
+
+## Data Processing
+
+### Data Cleaning
+
+To prepare the dataset for analysis, we cleaned and filtered the NHANES dataset based on the variables relevant to our three research questions. Below, we outline each step in our data cleaning process.
+
+We first explored missing values by counting the number of NAs in each column and visualizing them in a barplot.
+
+```{r, echo=FALSE}
+load("NHANES.RData")
+
+# 1. Count NAs per column
+na_counts <- data.frame(
+  variable  = names(NHANES),
+  n_missing = colSums(is.na(NHANES))
+)
+
+# 2. Barplot of missing counts
+barplot(
+  na_counts$n_missing,
+  names.arg = na_counts$variable,
+  las       = 2,
+  cex.names = 0.7,
+  main      = "Missing values per variable"
+)
+```
+
+We found that no row was fully complete across all 79 columns, as most participants were missing at least one variable. Therefore, dropping all rows with any missing value would drastically reduce the dataset.
+
+```{r, echo=FALSE}
+NHANES_drop_allNA <- na.omit(NHANES)
+dim(NHANES_drop_allNA)
+```
+
+Rather than dropping rows across the full dataset, we limited our cleaning to the variables directly related to our three hypotheses (age, liver_condition, diet_survey, COPD, smoke_amount, sleephrs_wkdays, and depression).
+
+Some variables, such as smoke_amount, were stored as character strings with non-numeric characters. We cleaned this variable to retain only numeric values
+
+```{r, echo=FALSE}
+NHANES_keyvars <- NHANES %>%
+  filter(
+    !is.na(age),
+    !is.na(liver_condition),
+    !is.na(diet_survey),
+    !is.na(COPD),
+    !is.na(smoke_amount),
+    !is.na(sleephrs_wkdays),
+    !is.na(depression)
+  )
+
+#convert smoke_amount to numeric
+NHANES_keyvars <- NHANES_keyvars %>%
+  mutate(
+    smoke_amount = str_replace_all(smoke_amount, "[^0-9\\.]", ""),
+    smoke_amount = as.numeric(smoke_amount)  
+  )
+```
+
+### Identify outliers
+
+To identify outliers in the `smoke_amount` variable, we used the **Interquartile Range (IQR) method**, a standard technique for detecting extreme values in a distribution.
+
+#### Calculate the IQR
+
+Using the IQR, we computed the lower and upper bounds:
+
+$$
+\text{Lower Bound} = Q_1 - 1.5 \times \text{IQR} = -17.5
+$$
+
+$$
+\text{Upper Bound} = Q_3 + 1.5 \times \text{IQR} = 42.5
+$$
+
+We then checked for any `smoke_amount` values falling outside these bounds.
+
+```{r, echo=FALSE}
+
+#compute Q1/Q3/IQR and identify outliers
+smk_stats <- NHANES_keyvars %>%
+  summarise(
+    Q1  = quantile(smoke_amount, .25, na.rm = TRUE),
+    Q3  = quantile(smoke_amount, .75, na.rm = TRUE),
+    IQR = IQR(smoke_amount,    na.rm = TRUE)
+  )
+
+lower_smk <- smk_stats$Q1 - 1.5 * smk_stats$IQR
+upper_smk <- smk_stats$Q3 + 1.5 * smk_stats$IQR
+```
+
+Our lower smoke bound is `r lower_smk` and our upper smoke bound `r upper_smk`.
+
+```{r, echo=FALSE}
+smoke_outliers <- NHANES_keyvars %>%
+  filter(smoke_amount < lower_smk | smoke_amount > upper_smk) %>%
+  select(age, sex, smoke_amount)
+
+smoke_outliers
+```
+
+After removing observations with missing values for our variables on interest, we find no outliers for our smoke_amount which is the only numeric variable of interest.
+
+Finally, to prepare for modeling and visualization, we performed several final transformations:
+
+* Created a binary sleep_category variable to distinguish between "Short sleep" (≤6 hours) and "Adequate sleep" (>6 hours).
+* Converted ordered factors like depression and diet_survey into numeric values when appropriate, allowing correlation analysis and regression modeling.
+
+These transformations ensured variables were in formats appropriate for analysis and improved interpretability across plots and models.
+
+## Modeling Process
+
+Our goal was to examine relationships between selected health behaviors and outcomes using models suited to the type and structure of each variable. For questions where the outcome was ordinal (like diet quality or depression frequency), we used ordinal logistic regression via the polr() function from the MASS package. This allowed us to preserve the ordered structure of the response categories. For the question where the outcome was binary (COPD diagnosis), we used binary logistic regression via the glm() function with family = binomial.
+
+We chose these models because they align with our research questions and the nature of our data. Each model includes one main predictor based on our hypothesis, and we interpreted the coefficient and p-value to assess whether there is a statistically significant association.
+
+## Results
+```{r echo = FALSE}
+library(knitr)
+library(ggplot2)
+library(tidyverse)
+library(knitr)
+library(patchwork)
+library(wordcloud)
+library(stringr)
+
+# Define model results
+model_summary <- data.frame(
+  `Research Question` = c(
+    "Liver Condition → Diet Quality",
+    "Smoking Amount → COPD Diagnosis",
+    "Weekday Sleep Hours → Depression Level"
+  ),
+  `Model Type` = c("Ordinal Logistic Regression", 
+                   "Binary Logistic Regression", 
+                   "Ordinal Logistic Regression"),
+  `Coefficient` = c(round(-0.0905, 4), round(0.0567, 4), round(0.0363, 4)),
+  `p-value` = c(0.691, 1.84e-10, 0.281)
+)
+
+# Create a kable table
+kable(model_summary, caption = "Summary of Model Coefficients and p-values")
+
+NHANES_keyvars <- NHANES %>%
+  filter(
+    !is.na(age),
+    !is.na(liver_condition),
+    !is.na(diet_survey),
+    !is.na(COPD),
+    !is.na(smoke_amount),
+    !is.na(sleephrs_wkdays),
+    !is.na(depression)
+  )
+
+NHANES_keyvars <- NHANES_keyvars %>%
+  mutate(
+    smoke_amount = str_replace_all(smoke_amount, "[^0-9\\.]", ""),
+    smoke_amount = as.numeric(smoke_amount)  
+  )
+
+NHANES_keyvars <- NHANES_keyvars %>%
+  mutate(smoke_group = case_when(
+    smoke_amount == 0 ~ "Non-Smoker",
+    smoke_amount <= 10 ~ "Light Smoker",
+    smoke_amount <= 20 ~ "Moderate Smoker",
+    TRUE ~ "Heavy Smoker"
+  ))
+library(ggplot2)
+library(scales)
+
+NHANES_keyvars$smoke_group <- factor(
+  NHANES_keyvars$smoke_group,
+  levels = c("Non-Smoker", "Light Smoker", "Moderate Smoker", "Heavy Smoker")
+)
+
+
+ggplot(NHANES_keyvars, aes(x = smoke_group, fill = COPD)) +
+  geom_bar(position = "fill") +
+  scale_y_continuous(labels = percent_format()) +
+  scale_fill_manual(values = c("No" = "#93c5fd", "Yes" = "#f87171")) +
+  labs(
+    title = "Proportion of COPD Diagnosis by Smoking Level",
+    x = "Smoking Category",
+    y = "Proportion",
+    fill = "COPD Diagnosis"
+  ) +
+  theme_minimal()
+```
+To better visualize the relationship between smoking and COPD, we grouped smoke_amount into categorical levels: Light, Moderate, and Heavy smokers. The plot shows a clear trend where higher smoking categories are associated with a greater proportion of COPD diagnoses, especially among heavy smokers.
+
+## Interpretation
+
+Our first research question asked whether individuals with a liver condition rate their diet differently than those without. The hypothesis was that the presence of a liver condition would influence diet quality, possibly encouraging healthier eating habits. However, the results from the ordinal logistic regression model showed no statistically significant relationship between liver condition and self-reported diet survey scores (p = 0.691). This suggests that, at least within this dataset, having a liver condition does not strongly impact how someone evaluates the quality of their diet. This might be because dietary change isn't consistently adopted after diagnosis, or because the self-rated diet score doesn’t capture specific dietary adjustments tied to liver health.
+
+The second research question focused on whether the number of cigarettes smoked per day is associated with the likelihood of reporting a COPD diagnosis. The hypothesis was that higher smoking intensity would be linked to increased odds of having COPD, and this was clearly supported by the data. The logistic regression returned a statistically significant result (p < 0.001), and the coefficient was positive, meaning that as cigarette consumption increases, the odds of reporting COPD go up. This trend is also visible in the proportional bar plot, where the percentage of individuals with COPD rises steadily from light smokers to heavy smokers. These results align with well-established clinical evidence connecting smoking to chronic respiratory conditions, and they reinforce the strength of this relationship within the NHANES sample.
+
+Our third research question explored whether weekday sleep duration is related to depressive symptom frequency. The hypothesis was that shorter sleep would be associated with more frequent symptoms of depression. Although the direction of the coefficient was positive, the ordinal logistic regression model did not return a significant result (p = 0.281). This means we do not have enough evidence to say that sleep duration predicts depression levels in this dataset. There are several possible reasons for this, including the fact that both sleep and depression were self-reported, which introduces variability, or that other factors like stress, physical health, or medication use may be more relevant in explaining depression symptoms than sleep alone.
+
+## Visualization and Communication
+```{r echo = FALSE}
+# Make sure COPD is a binary factor
+NHANES_keyvars$COPD <- factor(NHANES_keyvars$COPD, levels = c("No", "Yes"))
+
+# Logistic regression for smooth curve
+ggplot(NHANES_keyvars, aes(x = smoke_amount, y = as.numeric(COPD) - 1)) +
+  geom_jitter(width = 0.3, height = 0.02, alpha = 0.2, color = "#9ca3af") +
+  geom_smooth(method = "glm", method.args = list(family = "binomial"), se = TRUE, color = "#ef4444", size = 1.2) +
+  labs(
+    title = "Probability of COPD by Smoking Amount",
+    x = "Cigarettes per Day",
+    y = "Predicted Probability of COPD"
+  ) +
+  theme_minimal()
+
+```
+
+This plot shows the predicted probability of having COPD based on the number of cigarettes smoked per day. Each dot represents an individual, with 0 indicating no COPD and 1 indicating a COPD diagnosis. The red line shows the fitted logistic regression curve, and the shaded area represents the confidence interval. As smoking amount increases, the probability of having COPD also increases. The upward curve supports our earlier finding that smoking intensity is significantly associated with higher odds of COPD.
+
+```{r echo = FALSE}
+NHANES_keyvars$diet_binary <- ifelse(NHANES_keyvars$diet_survey %in% c("Very good", "Excellent"), 1, 0)
+
+ggplot(NHANES_keyvars, aes(x = as.numeric(liver_condition), y = diet_binary)) +
+  geom_jitter(width = 0.1, height = 0.05, alpha = 0.2, color = "#9ca3af") +
+  geom_smooth(method = "glm", method.args = list(family = "binomial"),
+              se = TRUE, color = "#10b981", size = 1.2) +
+  scale_x_continuous(breaks = c(0,1), labels = c("No", "Yes")) +
+  labs(
+    title = "Probability of High Diet Quality by Liver Condition",
+    x = "Liver Condition",
+    y = "Predicted Probability of High Diet Rating"
+  ) +
+  theme_minimal()
+
+```
+
+This plot shows the predicted probability of rating one’s diet as “Very good” or “Excellent” based on liver condition status. The flat curve and wide confidence band indicate little to no difference in high diet quality ratings between those with and without a liver condition.
+
+```{r echo = FALSE}
+NHANES_keyvars$depression_binary <- ifelse(NHANES_keyvars$depression %in% c("More than half the days", "Nearly every day"), 1, 0)
+
+ggplot(NHANES_keyvars, aes(x = sleephrs_wkdays, y = depression_binary)) +
+  geom_jitter(width = 0.3, height = 0.05, alpha = 0.2, color = "#9ca3af") +
+  geom_smooth(method = "glm", method.args = list(family = "binomial"),
+              se = TRUE, color = "#3b82f6", size = 1.2) +
+  labs(
+    title = "Probability of High Depression Level by Weekday Sleep Hours",
+    x = "Weekday Sleep Hours",
+    y = "Predicted Probability of High Depression"
+  ) +
+  theme_minimal()
+
+```
+
+This plot shows the predicted probability of experiencing high levels of depression based on weekday sleep hours. The nearly flat curve and wide confidence band suggest no meaningful relationship between sleep duration and reported depressive symptoms.
+
+```{r echo = FALSE}
+library(reshape2)
+vars_of_interest <- c("age", "smoke_amount", "sleephrs_wkdays",
+                      "liver_condition", "COPD", "depression", "diet_survey")
+
+NHANES_keyvars <- NHANES_keyvars %>%
+  mutate(
+    depression = factor(depression,
+                        levels = c("Not at all", "Several days", "More than half the days", "Nearly every day"),
+                        ordered = TRUE),
+    diet_survey = factor(diet_survey,
+                         levels = c("Poor", "Fair", "Good", "Very good", "Excellent"),
+                         ordered = TRUE)
+  )
+
+NHANES_corrdata <- NHANES_keyvars %>%
+  select(all_of(vars_of_interest)) %>%
+  mutate(across(c(liver_condition, COPD), ~ ifelse(. == "Yes", 1,
+                                                   ifelse(. == "No", 0, NA)))) %>%
+  mutate(across(c(depression, diet_survey), as.numeric))  # assumes these are ordered factors
+
+cor_matrix <- cor(NHANES_corrdata, use = "complete.obs")
+cor_melted <- melt(cor_matrix)
+
+ggplot(cor_melted, aes(Var1, Var2, fill = value)) +
+  geom_tile(color="white") +
+  scale_fill_gradient2(low = "blue", high = "red", mid = "white", midpoint = 0,
+                       limit = c(-1, 1), name = "Correlation") +
+  labs(title = "Correlation Heatmap of Selected Variables", x=" ", y=" ") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, size = 10, hjust = 1),
+        axis.text.y = element_text(size = 10)) +
+  coord_fixed()
+
+```
+
+This correlation heatmap shows generally weak linear relationships among the selected variables. Most of the off-diagonal cells are close to white, indicating low correlation. While smoking amount has a mild positive correlation with COPD and age, variables like diet quality, depression, and sleep hours show little to no strong association with the others. This supports the decision to model each outcome separately rather than relying on multicollinearity.
+
+\newpage
+
+## Conclusion and Recommendations
+Out of the three relationships we tested, only one showed strong evidence of a meaningful association. Smoking amount was significantly linked to higher odds of COPD, and that relationship was consistent across every visualization and supported by the logistic model. The other two questions, whether liver condition impacts diet quality and whether sleep hours predict depression, did not show statistically significant results. That does not mean there is no relationship at all, but it means we could not detect one in this dataset.
+
+If we were giving recommendations based on this analysis, the takeaway is clear. Smoking is a strong risk factor for COPD, and prevention efforts should continue to focus on reducing smoking behaviors. The lack of strong signals in the other two models suggests that improving diet or addressing depression may be more complex and influenced by additional factors not captured here.
+
+There are a few limitations to consider. The data is self-reported, which introduces bias, especially in variables like diet and depression. We also simplified some outcomes into binary variables for visualization and modeling, which may lose important detail. 
+
+In future work, it would be helpful to include more context such as medical history, medication use, or stress levels to better understand what influences these outcomes. Using more advanced modeling approaches or interaction terms could also help uncover patterns that simple models might miss. It would also be beneficial to fit models including more predictors to uncover additional insights, rather than simply examining correlations between specific variables. 
+
+
+
+
+
+
+
+
+
+
+
